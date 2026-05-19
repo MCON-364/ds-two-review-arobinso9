@@ -1,10 +1,13 @@
 package edu.touro.mcon364.finalreview.orderflowhandoff.exercises;
 
+import edu.touro.mcon364.finalreview.model.Priority;
 import edu.touro.mcon364.finalreview.model.SupportTicket;
 import edu.touro.mcon364.finalreview.model.TicketReport;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Building a report from completed work.
@@ -23,11 +26,11 @@ import java.util.Map;
  * Before coding, think about the problem in two layers:
  *
  * Layer 1 — What data does this object need?
- * - Should the list of tickets be passed into every method?
+ * - Should the list of tickets be passed into every method? yes and use streams
  * - Or does it make sense for the builder to receive the list once and then
- *   answer several report questions about that same list?
+ *   answer several report questions about that same list? no
  * - If this class stores the list, should it keep the original reference or
- *   protect itself with a copy?
+ *   protect itself with a copy? yes
  *
  * Layer 2 — What questions does the report ask?
  * - Which questions produce a single number?
@@ -70,7 +73,10 @@ public class TicketReportBuilder {
      */
     public TicketReportBuilder(List<SupportTicket> tickets) {
         // TODO: validate and store the tickets this object will analyze
-        this.tickets = List.of();
+        if (tickets == null) {
+            throw new IllegalArgumentException("tickets cannot be null");
+        }
+        this.tickets = List.copyOf(tickets);
     }
 
     /**
@@ -78,7 +84,10 @@ public class TicketReportBuilder {
      */
     public long getResolvedCount() {
         // TODO: calculate from tickets
-        return 0;
+
+        return tickets.stream()
+                .filter(ticket -> ticket.resolved()==true)
+                .count();
     }
 
     /**
@@ -87,8 +96,12 @@ public class TicketReportBuilder {
      * Tickets that are not resolved should not affect this average.
      */
     public double getAverageResolutionMinutes() {
-        // TODO: calculate from tickets
-        return 0.0;
+        // TODO: calculate from tickets- I could hv used summaryStats instead
+        return tickets.stream()
+                .filter(ticket -> ticket.resolved()==true)
+                .mapToInt(SupportTicket::minutesToResolve)
+                .average()
+                .orElse(0);
     }
 
     /**
@@ -96,7 +109,13 @@ public class TicketReportBuilder {
      */
     public Map<String, Long> getCountByCategory() {
         // TODO: calculate from tickets
-        return Map.of();
+        Map<String, Long> mutableMap= tickets.stream()
+                .collect(Collectors.groupingBy(
+                        ticket-> ticket.category(), //key- or use SupportTicket::category
+                                Collectors.counting() //value
+                ));
+        // we return a non modifiable map so now no one can destroy or wipe our data:)
+        return Collections.unmodifiableMap(mutableMap);
     }
 
     /**
@@ -104,7 +123,10 @@ public class TicketReportBuilder {
      */
     public List<SupportTicket> getHighPriorityUnresolved() {
         // TODO: calculate from tickets
-        return List.of();
+        return tickets.stream()
+                .filter(ticket -> ticket.resolved()== false)
+                .filter(ticket -> ticket.priority() == Priority.HIGH)
+                .toList();
     }
 
     /**

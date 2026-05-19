@@ -3,7 +3,12 @@ package edu.touro.mcon364.finalreview.orderflowhandoff.exercises;
 import edu.touro.mcon364.finalreview.model.LogLevel;
 import edu.touro.mcon364.finalreview.model.LogMessage;
 
+import java.util.ArrayList;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * LogProcessor.
@@ -65,8 +70,25 @@ public class LogProcessor {
     /**
      * Accept one message for processing.
      */
+
+    private final BlockingQueue<LogMessage> queue = new LinkedBlockingQueue<>(); // this can grow- and if messages are being
+    // submitting on the queue but nothing is being removed from the queue- then it will fill up- so we make a safeguard-
+    // offer() will only add if there is space on the queue.
+    private final List<Thread> workers = new ArrayList<>();
+    private final AtomicInteger totalProcessed= new  AtomicInteger(0);
+    private final ConcurrentHashMap <LogLevel, AtomicInteger> countsByLevel = new ConcurrentHashMap<>();
+    private volatile boolean running= false; // volatile means everyone can view it at the same time - so all workers can see it
+
     public void submit(LogMessage message) {
         // TODO: implement
+        // ArrayDeque -> use a LinkedBlockingQueue
+        // Submit takes in the messages and puts them on a queue.- so use add()
+        // then the consumers will take off the queue. The consumers will wait till there is something
+        // on the queue b4 doing work
+
+        if(running){
+            queue.offer(message); // offer is basically the same as add()
+        }
     }
 
     /**
@@ -74,6 +96,10 @@ public class LogProcessor {
      */
     public void start(int workerCount) {
         // TODO: implement
+        // creates a new pool and each thread will take a message from the queue
+        ExecutorService executorService = Executors.newFixedThreadPool(workerCount);
+
+
     }
 
     /**
