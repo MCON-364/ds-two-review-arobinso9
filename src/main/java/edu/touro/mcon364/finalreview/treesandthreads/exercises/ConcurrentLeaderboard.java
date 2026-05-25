@@ -48,8 +48,7 @@ public class ConcurrentLeaderboard {
      * @param entry the score entry to add
      */
     public void submitScore(ScoreEntry entry) {
-        // TODO: leaderboard.add(entry)
-        // TODO: totalSubmissions.incrementAndGet()
+        // TODO
     }
 
     /**
@@ -67,7 +66,7 @@ public class ConcurrentLeaderboard {
      * Returns how many times submitScore has been called since creation.
      */
     public int getTotalSubmissions() {
-        // TODO: return totalSubmissions.get()
+        // TODO
         return 0;
     }
 
@@ -82,8 +81,6 @@ public class ConcurrentLeaderboard {
      */
     public void runSimulation(List<String> players, int scoresEach)
             throws InterruptedException {
-        // TODO: create fixed thread pool of players.size() threads
-        // TODO: for each player submit a Runnable that calls submitScore scoresEach times
-        // TODO: pool.shutdown() then pool.awaitTermination(30, TimeUnit.SECONDS)
+
     }
 }
