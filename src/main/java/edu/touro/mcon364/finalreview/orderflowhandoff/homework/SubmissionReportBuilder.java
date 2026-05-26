@@ -1,11 +1,15 @@
 package edu.touro.mcon364.finalreview.orderflowhandoff.homework;
 
 import edu.touro.mcon364.finalreview.model.StudentSubmission;
+import edu.touro.mcon364.finalreview.model.Submission;
 import edu.touro.mcon364.finalreview.model.SubmissionReport;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
+
+import static java.util.stream.Collectors.counting;
 
 /**
  * Homework 3 — Building a report from a completed collection.
@@ -20,7 +24,7 @@ import java.util.Objects;
  * collection and then combine those answers into one SubmissionReport.
  *
  * Before coding, think through the shape of the problem:
- * - What information is already available in each StudentSubmission?
+ * - What information is already available in each StudentSubmission? the grade
  * - Which questions require counting?
  * - Which questions require calculating a numeric summary?
  * - Which questions require grouping submissions by one field?
@@ -56,7 +60,9 @@ public class SubmissionReportBuilder {
      */
     public long getLateCount() {
         // TODO: answer this reporting question from the submissions collection
-        return 0;
+        return submissions.stream()
+                .filter(StudentSubmission::late)
+                .count();
     }
 
     /**
@@ -66,7 +72,11 @@ public class SubmissionReportBuilder {
      */
     public double getAverageScore() {
         // TODO: answer this reporting question from the submissions collection
-        return 0.0;
+        return submissions.stream()
+                //extract the score
+                .mapToDouble(StudentSubmission::score)
+                .average()
+                .orElse(0.0);
     }
 
     /**
@@ -75,15 +85,31 @@ public class SubmissionReportBuilder {
      */
     public Map<String, Long> getSubmissionsByAssignment() {
         // TODO: answer this reporting question from the submissions collection
-        return Map.of();
+
+        // To group items by a property (like assignmentName) and count how many items fall into each bucket,
+        // you must use Collectors.groupingBy()
+        Map<String, Long> groupedMap = submissions.stream()
+                .collect(Collectors.groupingBy(
+                        StudentSubmission::assignmentName, //key
+                        counting() // no semicolon shld be here - value - Counts items per bucket
+                        )
+                );
+        // Makes the map completely unmodifiable before handing it out
+        return java.util.Collections.unmodifiableMap(groupedMap);
     }
 
     /**
      * Return the submissions whose score is below 60.
      */
+    // Since the test suite explicitly checks that the list returned by this method cannot be modified from the outside
+    // (failingSubmissionsIsUnmodifiable). Using Collectors.toList() returns a standard mutable ArrayList.
+    // If someone calls .clear() on it, it won't throw an exception, causing your test to fail.
+    // You need to use Collectors.toUnmodifiableList() instead.
     public List<StudentSubmission> getFailingSubmissions() {
         // TODO: answer this reporting question from the submissions collection
-        return List.of();
+        return submissions.stream()
+                .filter(studentSubmission -> studentSubmission.score()<60)
+                .collect(Collectors.toUnmodifiableList());
     }
 
     /**
@@ -98,3 +124,38 @@ public class SubmissionReportBuilder {
         );
     }
 }
+
+/*
+1- Collectors.groupingBy() --> 1-to-Many --> Automatically puts values into a collection bucket (List, Set, or a Count).
+--> Grouping multiple items together (e.g., Many submissions under one Homework assignment name).
+
+2- Collectors.toMap() --> 1-to-1 --> Links the key directly to a single, raw object property. --> Building direct lookup registries or ID indexes (e.g., Student Name $\rightarrow$ Score).
+We use toMap() when we are certain that every key in our data is unique (or we only want to pick one specific value per key).
+If Java finds duplicate keys while using toMap(), it will throw an IllegalStateException unless you explicitly tell
+it how to handle the tie.
+Code Example: Mapping Student to Score
+Let’s say you want a map of student names to their exact score (Map<String, Integer>).
+Since each student only has one score in this list, it's a perfect 1-to-1 relationship.
+
+public Map<String, Integer> getStudentScores() {
+    return submissions.stream()
+            .collect(Collectors.toMap(
+                    StudentSubmission::studentName, // Key: The student's name (String)
+                    StudentSubmission::score        // Value: Their score (Integer)
+            ));
+}
+
+What if there are duplicate keys? (The Tie-Breaker)
+If your list has two submissions for "Alice", toMap() will panic and crash because it doesn't know which score to keep.
+ To fix this, you pass a third argument to toMap() called a merge function. This acts as a tie-breaker.
+
+Keeping the Highest Score:
+public Map<String, Integer> getHighestScorePerStudent() {
+    return submissions.stream()
+            .collect(Collectors.toMap(
+                    StudentSubmission::studentName,
+                    StudentSubmission::score,
+                    (existingScore, newScore) -> Math.max(existingScore, newScore) // Tie-breaker!
+            ));
+}
+ */
