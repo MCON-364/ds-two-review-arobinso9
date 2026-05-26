@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
+// submit method takes a lambda. Either we can pass a lambda, defined named function, or a method of a class
 /**
  * LogProcessor.
  *
@@ -31,7 +32,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * - submit(message) accepts one log message for later processing.
  * - start(workerCount) starts exactly workerCount background workers.
  * - workerCount must be positive.
- * - workers should keep processing while the processor is still accepting work
+ * - workers should keep processing while the processor is still accepting work --> so need volatile flag! Volatile accessible to all threads
  *   or while there is still unprocessed work waiting.
  * - stop() tells the processor to stop accepting/expecting more work and waits
  *   until the already-submitted work has been handled.
@@ -72,11 +73,14 @@ public class LogProcessor {
      */
 
     private final BlockingQueue<LogMessage> queue = new LinkedBlockingQueue<>(); // this can grow- and if messages are being
-    // submitting on the queue but nothing is being removed from the queue- then it will fill up- so we make a safeguard-
+    // submitting on the queue but nothing is being removed from the queue - then it will fill up- so we make a safeguard-
     // offer() will only add if there is space on the queue.
     private final List<Thread> workers = new ArrayList<>();
+    private ExecutorService executorService;
     private final AtomicInteger totalProcessed= new  AtomicInteger(0);
-    private final ConcurrentHashMap <LogLevel, AtomicInteger> countsByLevel = new ConcurrentHashMap<>();
+    // we use compute() and merge() when working with ConcurrentHashMaps
+    // we are tracking how many of each error we have.
+    private final ConcurrentHashMap <LogLevel, Integer> countsByLevel = new ConcurrentHashMap<>();
     private volatile boolean running= false; // volatile means everyone can view it at the same time - so all workers can see it
 
     public void submit(LogMessage message) {
@@ -96,8 +100,31 @@ public class LogProcessor {
      */
     public void start(int workerCount) {
         // TODO: implement
+        if(workerCount<=0){
+            throw new  IllegalArgumentException("workerCount must be greater than 0");
+        }
+        running=true;
+
         // creates a new pool and each thread will take a message from the queue
-        ExecutorService executorService = Executors.newFixedThreadPool(workerCount);
+        executorService = Executors.newFixedThreadPool(workerCount);
+
+        for(int i=0; i<workerCount; i++){
+            executorService.submit(this::workerLoop);
+        }
+
+//        //or could hv used a lambda
+//        for(int j=0; j<workerCount; j++){
+//            executorService.submit(()->{
+//                while(running || !queue.isEmpty()){
+//                    try{
+//                        process(queue.take());
+//                    }
+//                    catch(InterruptedException e){
+//                        Thread.currentThread().interrupt();
+//                    }
+//                }
+//            });
+//        }
 
 
     }
@@ -110,6 +137,13 @@ public class LogProcessor {
      */
     private void workerLoop() {
         // TODO: implement
+        try{
+            while(running || !queue.isEmpty()){
+                process(queue.take());
+            }
+        }catch(InterruptedException e){
+            Thread.currentThread().interrupt();
+        }
     }
 
     /**
@@ -117,6 +151,11 @@ public class LogProcessor {
      */
     private void process(LogMessage message) {
         // TODO: implement
+        totalProcessed.incrementAndGet();
+        // update counts by level atomically
+        // merge is Atomic op on concurrent hashmap. It takes 3 params- key, value to apply to the method, and a method.
+        // So here - we will take the current value, and then every time we get another value, we will add one.
+        countsByLevel.merge(message.level(), 1, Integer::sum);
     }
 
     /**
@@ -124,6 +163,19 @@ public class LogProcessor {
      */
     public void stop() throws InterruptedException {
         // TODO: implement
+        running=false;
+        if(executorService==null)
+            return;
+
+        executorService.shutdown();
+        executorService.awaitTermination(1, TimeUnit.SECONDS);
+
+        // drain any messages that were in the queue but not yet picked up
+        // we call messages in the queue and process them on the main thread - since we already shut down the worker threads above
+        // this is how we make sure we processed all the remaining message son the queue - so now we did :)
+        LogMessage msg;
+        while((msg=queue.poll())!=null)
+            process(msg);
     }
 
     /**
@@ -131,7 +183,7 @@ public class LogProcessor {
      */
     public int getTotalProcessed() {
         // TODO: implement
-        return 0;
+        return totalProcessed.get();
     }
 
     /**
@@ -139,6 +191,6 @@ public class LogProcessor {
      */
     public Map<LogLevel, Integer> getCountsByLevel() {
         // TODO: implement
-        return Map.of();
+        return Map.copyOf(countsByLevel);
     }
 }

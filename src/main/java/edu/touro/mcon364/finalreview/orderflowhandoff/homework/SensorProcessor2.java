@@ -1,10 +1,13 @@
 package edu.touro.mcon364.finalreview.orderflowhandoff.homework;
 
+import com.sun.source.tree.IfTree;
 import edu.touro.mcon364.finalreview.model.SensorReading;
 
-import java.util.ArrayDeque;
 import java.util.DoubleSummaryStatistics;
-import java.util.concurrent.*;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -14,71 +17,75 @@ import java.util.concurrent.atomic.AtomicReference;
  * A monitoring system receives readings from sensors over time. One part of the
  * program submits readings as they arrive. Another part of the program processes
  * those readings using one or more background workers.
- *
+ * --> multiple threads will be submitting and processing readings at the same time.
+ *     this is a thread-safety problem, and we need to coordinate the handoff of work between those threads.
  * This class is responsible for coordinating that handoff and for keeping a
  * summary of the readings that were actually processed.
- *
+ * --> we need to store the submitted readings somewhere until they are processed,
+ *     and we need to keep track of the summary statistics for the processed readings.
  * The important question is not only "How do we calculate the stats?" It is also:
  * "What happens when readings are being submitted and processed by different
- * threads at the same time?" -- so we need volatile boolean flag
+ * threads at the same time?"
  *
  * Requirements:
  * - submit(reading) accepts one new sensor reading for later processing.
+ *   --> you should put the reading on a thread-safe queue or collection for later processing by the workers.
  * - start(workerCount) starts workerCount background workers.
+ *   --> You should create a thread pool and submit workerCount tasks to it,
  * - workerCount must be greater than 0.
+ *   --> You should validate the input and throw an exception if it's not.
  * - Workers should process submitted readings until the processor is stopped and
  *   all already-submitted readings have been handled.
+ *   --> Your worker runnable should check both the running state and the queue state to decide when to exit.
  * - stop() tells the processor to stop accepting/processing future work and waits
  *   until the workers finish the remaining work.
+ *   --> You should set a flag to stop accepting new work, interrupt the worker threads to wake them up if they're waiting,
+ *       and then wait for them to finish.
  * - getTotalProcessed() returns how many readings have been processed so far.
+ *   --> You should use an AtomicInteger to keep track of the total count of processed readings, and return its value here.
  * - getStats() returns summary statistics for the processed reading values:
  *   count, minimum, maximum, sum, and average.
+ *   --> You should use a DoubleSummaryStatistics object to keep track of the summary statistics, and return a snapshot of it here.
  * - Public reporting methods must not expose mutable internal state.
+ *
  *
  * Before coding, think about:
  * - Which object or objects represent work waiting to be processed?
+ *   --> A thread-safe queue or collection (e.g., a BlockingQueue) can represent the work waiting to be processed.
  * - Which object or objects represent work that has already been processed?
+ *   --> An AtomicInteger can represent the count of processed readings, and a DoubleSummaryStatistics object can represent the summary statistics for the processed readings.
  * - Which state can be accessed by more than one thread?
+ *   --> The queue of submitted readings, the count of processed readings, and the summary statistics can all be accessed by multiple threads, so they need to be thread-safe.
  * - How will workers know when to keep working and when to stop?
+ *   --> The workers can check a running flag to know when to stop accepting new work, and they can also check the queue to see if there is still work to be done before exiting.
  * - What should happen if getStats() is called while workers are still running?
+ *   --> getStats() should return a snapshot of the current statistics, which may be changing as workers process readings.
+ *       You should ensure that the returned statistics are consistent and not affected by concurrent updates.
  * - Is it better to store all processed readings and calculate stats later, or
  *   update numeric summary state as each reading is processed?
+ *   --> It is more efficient to update the summary statistics as each reading is processed, rather than storing all readings and calculating stats later.
+ *   This way, you can keep track of the count, minimum, maximum, sum, and average in a single pass without needing to store all individual readings.
  * - If several workers update the same stats, how will those updates stay correct?
+ *  --> You should ensure that updates to the summary statistics are thread-safe.
+ *  --> alternatively you can keep readings in a thread-safe collection and calculate stats in getStats(), but that would be less efficient and more memory-intensive.
  */
-public class SensorProcessor {
+public class SensorProcessor2 {
+
+    private final BlockingQueue<SensorReading> queue = new LinkedBlockingQueue<>();
+    private final AtomicInteger totalProcessed = new AtomicInteger(0);
+    private final AtomicReference<DoubleSummaryStatistics> stats = new AtomicReference<>(new DoubleSummaryStatistics());
+    private volatile boolean running = true;
+    private  ExecutorService executor;
 
     /**
      * Accept one sensor reading for processing.
      *
      * @param reading the reading to process later
      */
-
-    // A BlockingQueue natively handles the thread-safe queueing, blocking worker
-    // threads when the queue is empty, and unblocking them when new work arrives
-    private final BlockingQueue<SensorReading> queue= new LinkedBlockingQueue<>();
-
-    private final AtomicInteger totalProcessed = new AtomicInteger(0);
-    // Instead of you manually writing code to track the highest number, lowest number, total sum, and count,
-    // you just "feed" numbers into it using .accept(). Every time you pass a number to .accept(),
-    // the object instantly updates its internal records.
-    // you can wrap any method in an atomic shell- and then update atomically
-    private final AtomicReference<DoubleSummaryStatistics> stats = new AtomicReference<>(new DoubleSummaryStatistics());
-    // use an atomic shell
-    // we need the flag bc we are going only as the processor is running
-    // delcare isRunning as false- and then switch it to true when we call start()
-    private volatile boolean isRunning= false;
-    ExecutorService executor ;
-
     public void submit(SensorReading reading) {
-        // TODO: decide where submitted readings should be stored
-        // Producer- we are making the donuts and dropping them on a tray- the BlockingQueue
-
-        // when the shop is closed - we are closed - we are not letting anyone new in.
-        // we just finish the orders we are already filling
-        if (!isRunning) {
-            throw new IllegalStateException("Processor has been stopped and is no longer accepting work.");
+        if(running) {
+            queue.offer(reading);
         }
-        queue.add(reading);
     }
 
     /**
@@ -89,24 +96,13 @@ public class SensorProcessor {
      */
     public void start(int workerCount) {
         // TODO: validate workerCount
-        if (workerCount <= 0)
-            throw new IllegalArgumentException("workerCount must be greater than 0");
-
-        // If the shop is already open - then we have all the workers in there... we dont need to add mroe in.
-        if (isRunning) {
-            throw new IllegalStateException("Processor is already running.");
-        }
-
+        if (workerCount <= 0) throw new IllegalArgumentException("workerCount must be positive");
         // TODO: start the requested number of workers
-        isRunning = true;
         executor = Executors.newFixedThreadPool(workerCount);
-
-        // Submit the worker loops to run concurrently in the background - getting the workers started! - the consumers
         for (int i = 0; i < workerCount; i++) {
             executor.submit(this::workerLoop);
         }
     }
-
     private void process(SensorReading reading) {
         // Update the total processed count
         totalProcessed.incrementAndGet();
@@ -128,19 +124,8 @@ public class SensorProcessor {
      * The worker should repeatedly look for work, process it when available, and
      * eventually exit when the processor is stopping and no work remains.
      */
-
-
     private void workerLoop() {
-        // the Consumer - the workers sitting by the tray - who grab donuts as they appear,
-        // count them, and pack them into boxes.
-
-        // TODO: implement the worker behavior
-        // need to pull a SensorReading off the queue, extract its numerical value
-        // and feed it into a shared data structure that tracks statistics.
-
-        // keep running while system is active OR while there are leftover items to drain
-
-        while (isRunning || !queue.isEmpty()) { // while its empty or queue is empty
+        while (running || !queue.isEmpty()) {
             try {
                 // Wait for a reading to become available, but time out periodically to check the running state
                 SensorReading reading = queue.poll(100, java.util.concurrent.TimeUnit.MILLISECONDS);
@@ -162,22 +147,19 @@ public class SensorProcessor {
      */
     public void stop() throws InterruptedException {
         // TODO: signal that work should stop
-        // we tell workers to stop taking new items once the queue drains
-        isRunning = false;
-        // TODO: wait for all workers to finish
-        if (executor != null) { //if the queue is not empty, then we need to process whats still on the queue in  the main queue
-            // reject any brand-new task submittals to the pool - we don't let anyone new into the store.
-            // we don't kill the workers threads tho
+        running = false;
+        // check that executor is not null before trying to shut it down.
+        // if it's null, that means start() was never called, and there are no workers to shut down or wait for.
+
+        if (executor != null) {
             executor.shutdown();
 
-            // wait blockingly until all currently running worker loops finish processing the remaining queue
-            // these params basically mean - wait till forever. wait till until every single background worker finishes its loop and dies.
-            executor.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+            // TODO: wait for all workers to finish
+            //we are not told how long to wait, so we will wait indefinitely until they finish.
+            executor.awaitTermination(Long.MAX_VALUE, java.util.concurrent.TimeUnit.NANOSECONDS);
+            //Now all workers have finished, and we can be sure that all submitted readings have been processed.
         }
-
-        // now we need to drain the queue- we process the remaining messages on the main thread
-        // UPDATE HERE! ADD A PROCESS METHOD!
-        while(!queue.isEmpty()){
+        while (!queue.isEmpty()) {
             process(queue.poll());
         }
     }
@@ -186,7 +168,6 @@ public class SensorProcessor {
      * Return the number of readings processed so far.
      */
     public int getTotalProcessed() {
-        // TODO: return the processed count safely
         return totalProcessed.get();
     }
 
@@ -196,21 +177,11 @@ public class SensorProcessor {
      * If no readings have been processed yet, return an empty
      * DoubleSummaryStatistics object.
      */
-    /*
-    Imagine this.stats is a whiteboard in a busy factory where workers are constantly erasing and updating numbers.
-    If a manager wants a report, they don't take the physical whiteboard away from the workers.
-    Instead, they take a photo of the whiteboard.
-    .combine() is that photo. It takes an empty statistics object (snapshot) and copies all the current values
-    (Count, Sum, Min, Max) out of the live this.stats object at that exact microsecond.
-    Now, the method can safely return that snapshot to the user. The user can look at the data for
-    as long as they want, and even if background workers keep changing this.stats a millisecond later,
-    the user's snapshot remains perfectly frozen and safe to read.
-     */
     public DoubleSummaryStatistics getStats() {
         // TODO: calculate or return the current statistics safely
-        //return a snapshot copy so we do not expose internal mutable state to the caller
-            DoubleSummaryStatistics snapshot = new DoubleSummaryStatistics();
-            snapshot.combine(stats.get());
-            return snapshot;
+        // Return a snapshot of the current statistics to avoid exposing mutable internal state
+        DoubleSummaryStatistics snapshot = new DoubleSummaryStatistics();
+        snapshot.combine(stats.get());
+        return snapshot;
     }
 }

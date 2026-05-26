@@ -41,9 +41,6 @@ import java.util.concurrent.Semaphore;
 public class PrintQueue {
 
     // TODO: choose the field or fields needed to remember waiting print jobs
-    // QUESTION
-    // we use a semaphore and only let one printer work at a time- where do I use the sempaphore? is it needed?
-    Semaphore printer =  new Semaphore(1);
     //queue of jobs
     ArrayDeque <PrintJob> jobs = new ArrayDeque<>();
 

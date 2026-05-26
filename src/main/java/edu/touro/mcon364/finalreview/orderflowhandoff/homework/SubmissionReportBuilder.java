@@ -51,6 +51,8 @@ public class SubmissionReportBuilder {
 
     private final List<StudentSubmission> submissions;
 
+    // this validates to make sure that we don't accept nulls- we must do this in the constructor for things of this type
+    // meaning - when we are getting a collection from the constructor then use this...If its list -> List.copyOf(). If its a mp, then use Map.copyOf()
     public SubmissionReportBuilder(List<StudentSubmission> submissions) {
         this.submissions = List.copyOf(Objects.requireNonNull(submissions));
     }
