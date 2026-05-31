@@ -50,6 +50,7 @@ public class ActionHistory {
             return Optional.empty(); // return empty instead of crashing
         }
 
+
         Action action = undo.pop();
         redo.push(action); // Move it to redo so the user can bring it back
 

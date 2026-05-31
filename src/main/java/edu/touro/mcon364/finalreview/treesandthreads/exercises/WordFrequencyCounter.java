@@ -1,6 +1,7 @@
 package edu.touro.mcon364.finalreview.treesandthreads.exercises;
 
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.*;
 
 /**
@@ -44,7 +45,10 @@ public class WordFrequencyCounter {
     public WordFrequencyCounter(List<String> words) {
         // TODO: validate that words is not null
         // TODO: store a defensive copy so outside code cannot mutate this object
-        this.words = List.of();
+        if  (words == null)
+            throw new IllegalArgumentException("words cannot be null or empty");
+
+        this.words = List.copyOf(words);
     }
 
     /**
@@ -52,20 +56,40 @@ public class WordFrequencyCounter {
      * The returned map must be sorted alphabetically by word.
      * @return sorted frequency map
      */
+    // Collectors.toCollection() is used for gathering elements into a Collection (like a TreeSet).
+    // To build a Map, you need Collectors.groupingBy()
+    // Instead, we use Collectors.groupingBy(Function.identity(), TreeMap::new, Collectors.counting()).
+    // This groups by the word, ensures the factory produces a TreeMap, and counts occurrences.
     public TreeMap<String, Long> buildFrequencyMap() {
         // TODO
-        return new TreeMap<>();
+        return words.stream()
+                .collect(Collectors.groupingBy( // we create a map
+                        Function.identity(), //use the word itself as the key
+                        TreeMap::new, // groupingBy by default creates a HashMap, so here we are creating a TreeMap instead
+                        Collectors.counting() // downstream collector. counts how many times each word appears.
+                ));
     }
 
     /**
      * Returns the n most frequent words, highest count first.
      *
-     * @param n number of top words to return
+     * @param n number of top words to return -- its in descending order so we want the first 5 - we have highest frequencys first
      * @return list of words, most frequent first
      */
     public List<String> getTopN(int n) {
         // TODO
-        return List.of();
+        //// We pull the sorted frequency map we just built, grab its entry set (key-value pairs), and stream it.
+        // We must stream the entries because we need to sort by the values (the counts), not the keys.
+        return buildFrequencyMap().entrySet().stream()
+                // Map.Entry.comparingByValue() tells the stream to sort the pairs by their counts.
+                // Comparator.reverseOrder() flips it so that the largest counts come first. (bc normally its in ascending order. we need descending)
+                .sorted(Map.Entry.comparingByValue(Comparator.reverseOrder()))
+                //  limit(n) Truncates the stream so that only the first n elements (the highest counts) remain.
+                .limit(n)
+                // Since the method signature expects a List<String>, we extract just the word (the key) from the entry pair and discard the count.
+                .map(Map.Entry::getKey)
+                // Collects the final stream of strings into an immutable list.
+                .toList();
     }
 
     /**
@@ -77,7 +101,19 @@ public class WordFrequencyCounter {
      */
     public List<String> getWordsStartingWith(char prefix) {
         // TODO
-        return List.of();
+        // Converts the character (e.g., 'b') into a string ("b").
+        String start = String.valueOf(prefix);
+        // Increments the character character-code wise (e.g., 'b' becomes 'c') and converts it to a string ("c")
+        String end = String.valueOf((char) (prefix + 1));
+
+        // buildFrequencyMap().subMap(start, end): This leverages a specialized method on NavigableMap (which TreeMap implements). subMap(fromKey, toKey)
+        // takes advantage of the underlying red-black tree layout to instantly isolate a chunk of the map. By default, the start boundary
+        // is inclusive and the end boundary is exclusive.
+        // Example: .subMap("b", "c") fetches every word starting with "b", up to but excluding "c".
+        // .keySet(): Extracts just the sorted words from that specific slice.
+        // Why .keySet(): We only care about the words themselves (the keys), not how many times they appeared (the values).
+        // new ArrayList<>(...): Wraps the resulting set view into a standard array list to match the return type requirement.
+        return new ArrayList<>(buildFrequencyMap().subMap(start, end).keySet());
     }
 
     /**
@@ -88,8 +124,38 @@ public class WordFrequencyCounter {
      * @param to   upper bound word (inclusive)
      * @return Optional containing the most frequent word in range, or empty if none
      */
+    /*
+    1. Stream .map()
+    Applies to: A collection of many elements inside an open stream.
+    Purpose: Transforms each individual item in the stream as it passes through the pipeline.
+    Output: A new Stream<T> containing the transformed elements.
+
+    2. Optional .map()
+    Applies to: A single container object that is either holding one value or is empty (which is what .max() returns to prevent crashing if the stream was empty).
+    Purpose: If a value is present inside the container, transform it. If the container is empty, do nothing and just stay empty.
+
+    Output: A new Optional<T> containing the transformed internal value (or an empty Optional).
+     */
     public Optional<String> getMostFrequentInRange(String from, String to) {
         // TODO
-        return Optional.empty();
+        TreeMap<String, Long> freqMap = buildFrequencyMap();
+
+        // Defensive check. If a user queries an invalid range where the starting word is alphabetically greater than the ending word
+        // (e.g., from = "zoo", to = "apple"), it immediately returns Optional.empty()
+        if (from.compareTo(to) > 0) {
+            return Optional.empty();
+        }
+        // freqMap.subMap(from, true, to, true): Unlike the previous method, we pass boolean flags here.
+        // Setting both to true ensures that both the from word and the to word are inclusive in our slice.
+        return freqMap.subMap(from, true, to, true)
+                // Converts the isolated range slice into a stream of entry pairs.
+                .entrySet()
+                .stream()
+                // The terminal .max() operation scans the stream and finds the entry with the highest numeric value (the frequency).
+                // Because it evaluates the stream, it returns an Optional<Map.Entry<String, Long>> (handling cases where the range might be empty).
+                .max(Map.Entry.comparingByValue())
+                // Transforms the Optional containing the entry pair into an Optional<String> containing just the winning word.
+                // If the max element didn't exist, the Optional naturally stays empty.
+                .map(Map.Entry::getKey);
     }
 }

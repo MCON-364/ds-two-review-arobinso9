@@ -49,6 +49,8 @@ public class ConcurrentLeaderboard {
      */
     public void submitScore(ScoreEntry entry) {
        //TODO
+        leaderboard.add(entry);
+        totalSubmissions.incrementAndGet();
     }
 
     /**
@@ -57,9 +59,15 @@ public class ConcurrentLeaderboard {
      * @param n number of top entries to return
      * @return immutable top-n list
      */
+    // Because ConcurrentSkipListSet naturally keeps everything perfectly sorted via its internal compareTo logic,
+    // your elements are already sitting in the stream from highest score to lowest score.
+    // You can delete the sorting lines completely and just go straight to limit(n). --> I deleted the sorted()
     public List<ScoreEntry> getTopN(int n) {
         // TODO
-        return List.of();
+        return leaderboard.stream()
+                //  limit(n) Truncates the stream so that only the first n elements (the highest counts) remain.
+                .limit(n)
+                .toList();
     }
 
     /**
@@ -67,7 +75,7 @@ public class ConcurrentLeaderboard {
      */
     public int getTotalSubmissions() {
         // TODO
-        return 0;
+        return totalSubmissions.get();
     }
 
     /**
@@ -79,8 +87,49 @@ public class ConcurrentLeaderboard {
      * @param players    list of player names
      * @param scoresEach number of random scores each player submits
      */
+    /*
+    In a single-threaded program, you usually use java.util.Random to get random numbers.
+    However, in a multi-threaded program, java.util.Random becomes a massive bottleneck.
+    Under the hood, java.util.Random uses a single internal number (a seed) to calculate the next random number.
+    If 10 threads try to get a random number at the exact same fraction of a second, they will fight over that single seed.
+    Java forces them to wait in line (using atomic locks) so they don't corrupt the seed. This fighting is called thread contention.
+    ThreadLocalRandom solves this. Instead of one shared generator, it gives every single thread its own private random number generator instance.
+     */
+
     public void runSimulation(List<String> players, int scoresEach)
             throws InterruptedException {
+        // we create a pool with one thread per player to maximize concurrency
+        ExecutorService executor = Executors.newFixedThreadPool(players.size());
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+
+
+        // we need a nested loop (expressed via streams) to submit multiple scores per player
+        players.forEach(player -> {
+            // if a player sent in 5 scores then we need to submit 5 diff scores for them...
+            for(int i=0; i<scoresEach; i++){
+                // When you call executor.submit(), you are dropping a piece of paper into their mailbox.
+                // The paper contains a Runnable task—a description of work that needs to be done.
+                // We are submitting a lambda expression () -> { ... }.
+                //To the executor, this lambda is just a package of code that says: "Hey worker thread, whenever
+                // you are free, open this package, generate a random score, and call submitScore for me."
+                executor.submit(() -> {
+                    // Range: 1 (Inclusive)- to 100,000 (Exclusive)
+                    // so 1- 99,999
+                    int randomScore = random.nextInt(1, 100000);
+                    //get the timeStamp of the score
+                    long currentTime = System.currentTimeMillis();
+
+                    //create a ScoreEntry object
+                    ScoreEntry entry = new ScoreEntry(player, randomScore, currentTime);
+                    // we submit the scoreEntry object
+                    submitScore(entry);
+                });
+            }
+        });
+
+        executor.shutdown();
+        // Wait up to 10 seconds for all existing submitted tasks to finish running
+        executor.awaitTermination(10, TimeUnit.SECONDS);
 
     }
 }
