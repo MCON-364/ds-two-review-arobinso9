@@ -11,7 +11,7 @@ import java.util.stream.*;
  * and statistical analysis.
  *
  * Before coding, think about:
- * - Should the map key be the student name or the grade? Why does it matter?
+ * - Should the map key be the student name or the grade? Why does it matter? n
  * - What does TreeMap.firstEntry() return? What does lastEntry() return?
  * - How do we turn a numeric score into a letter grade inside a stream?
  *
@@ -33,7 +33,9 @@ public class StudentGradeBook {
 
     public StudentGradeBook(Map<String, Double> grades) {
         // TODO: validate non-null; store a defensive copy
-        this.grades = Map.of();
+        if  (grades == null)
+            throw new NullPointerException("grades can't be null");
+        this.grades = Map.copyOf(grades);
     }
 
     /**
@@ -42,7 +44,8 @@ public class StudentGradeBook {
      */
     public TreeMap<String, Double> buildSortedGradeBook() {
         // TODO
-        return new TreeMap<>();
+        // Passing a map directly to a TreeMap constructor sorts it by its keys instantly
+        return new TreeMap<>(grades);
     }
 
     /**
@@ -51,7 +54,9 @@ public class StudentGradeBook {
      */
     public DoubleSummaryStatistics getStatistics() {
         // TODO
-        return new DoubleSummaryStatistics();
+        return grades.values().stream()
+                .mapToDouble(Double::doubleValue) // Unbox to primitive double stream
+                .summaryStatistics();
     }
 
     /**
@@ -60,7 +65,13 @@ public class StudentGradeBook {
      */
     public TreeMap<String, Long> getLetterGradeDistribution() {
         // TODO
-        return new TreeMap<>();
+        return grades.values().stream()
+                .map(this::toLetterGrade) // Convert numbers to "A", "B", "C"...
+                .collect(Collectors.groupingBy(
+                        letterGrade -> letterGrade,
+                        TreeMap::new,            // Keeps letter grades sorted ("A" -> "B" -> "C"...)
+                        Collectors.counting()    // Counts occurrences per group
+                ));
     }
 
     /**
@@ -68,7 +79,12 @@ public class StudentGradeBook {
      */
     public List<String> getTopStudents(int n) {
         // TODO
-        return List.of();
+        // see notes in word freq counter
+        return grades.entrySet().stream() // we do entrySet bc we need access to both the key and the value
+                .sorted(Map.Entry.comparingByValue(Comparator.reverseOrder())) // Sort highest grade first
+                .limit(n)
+                .map(Map.Entry::getKey) // Extract just the student names
+                .toList();
     }
 
     /**
@@ -77,6 +93,20 @@ public class StudentGradeBook {
      */
     public List<String> getStudentsInScoreRange(double low, double high) {
         // TODO
-        return List.of();
+        return grades.entrySet().stream()
+                .filter(entry -> entry.getValue() >= low && entry.getValue() <= high)
+                // Ensure alphabetical sorting by name since source map might be an unordered HashMap
+                .map(Map.Entry::getKey)
+                .sorted()
+                .toList();
+    }
+
+    // Helper method to translate numerical scores to letter grades
+    private String toLetterGrade(double score) {
+        if (score >= 90.0) return "A";
+        if (score >= 80.0) return "B";
+        if (score >= 70.0) return "C";
+        if (score >= 60.0) return "D";
+        return "F";
     }
 }
