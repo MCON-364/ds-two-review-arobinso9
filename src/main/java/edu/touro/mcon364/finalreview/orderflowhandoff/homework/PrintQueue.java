@@ -2,7 +2,9 @@ package edu.touro.mcon364.finalreview.orderflowhandoff.homework;
 
 import edu.touro.mcon364.finalreview.model.PrintJob;
 
+import java.util.ArrayDeque;
 import java.util.Optional;
+import java.util.concurrent.Semaphore;
 
 /**
  * Homework 1 — PrintQueue.
@@ -12,7 +14,7 @@ import java.util.Optional;
  *
  * The print room should behave the way people expect a normal printer line to
  * behave: jobs wait until it is their turn, and the next job selected for
- * printing should be based on the order in which jobs arrived.
+ * printing should be based on the order in which jobs arrived. --use a Queue
  *
  * This class is responsible for remembering the waiting print jobs and exposing
  * the operations that the rest of the program would need:
@@ -21,10 +23,10 @@ import java.util.Optional;
  *
  * Before coding, think through the shape of the problem:
  * - What information does this object need to remember between method calls?
- * - When a new job is submitted, where should it be placed?
- * - When the printer is ready, which job should be selected?
- * - Is this problem about the most recent item, the oldest item, or all items?
- * - Which collection behavior matches that rule?
+ * - When a new job is submitted, where should it be placed? end of the queue
+ * - When the printer is ready, which job should be selected? front of queue. FIFO
+ * - Is this problem about the most recent item, the oldest item, or all items? oldest item
+ * - Which collection behavior matches that rule? queue
  * - What should the methods return when there are no waiting jobs?
  *
  * Requirements:
@@ -39,6 +41,8 @@ import java.util.Optional;
 public class PrintQueue {
 
     // TODO: choose the field or fields needed to remember waiting print jobs
+    //queue of jobs
+    ArrayDeque <PrintJob> jobs = new ArrayDeque<>();
 
     /**
      * Records a new print job as waiting.
@@ -47,6 +51,7 @@ public class PrintQueue {
      */
     public void submit(PrintJob job) {
         // TODO: implement
+        jobs.add(job);
     }
 
     /**
@@ -54,9 +59,20 @@ public class PrintQueue {
      *
      * @return the next print job, or Optional.empty() when no jobs are waiting
      */
+    // In an ArrayDeque, pop() acts like a stack LIFO, so use poll() or removeFirst() instead for FIFO
+    // calling Optional.of() on a variable that could potentially be null is unsafe.
+    // Java will crash with a NullPointerException instead of returning Optional.empty().
+    // To be safe, you should use Optional.ofNullable()
     public Optional<PrintJob> printNext() {
         // TODO: implement
-        return Optional.empty();
+        if (jobs.isEmpty())
+            return Optional.empty();
+        else{
+            PrintJob job= jobs.removeFirst();
+            // we need to wrap job in an Optional to match return type
+            return Optional.ofNullable(job);
+
+        }
     }
 
     /**
@@ -66,7 +82,12 @@ public class PrintQueue {
      */
     public Optional<PrintJob> peekNext() {
         // TODO: implement
-        return Optional.empty();
+        if (jobs.isEmpty())
+            return Optional.empty();
+        else{
+            PrintJob job= jobs.peek();
+            return Optional.ofNullable(job);
+        }
     }
 
     /**
@@ -74,6 +95,6 @@ public class PrintQueue {
      */
     public int queuedJobs() {
         // TODO: implement
-        return 0;
+        return jobs.size();
     }
 }
