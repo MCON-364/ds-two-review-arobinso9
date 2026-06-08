@@ -51,8 +51,9 @@ public class SubmissionReportBuilder {
 
     private final List<StudentSubmission> submissions;
 
-    // this validates to make sure that we don't accept nulls- we must do this in the constructor for things of this type
+    // this validates to make sure that we don't accept nulls - we must do this in the constructor for things of this type
     // meaning - when we are getting a collection from the constructor then use this...If its list -> List.copyOf(). If its a mp, then use Map.copyOf()
+    // throws NPE if its null vs in TicketReportBuilder an IllegalARgException is thrown if null
     public SubmissionReportBuilder(List<StudentSubmission> submissions) {
         this.submissions = List.copyOf(Objects.requireNonNull(submissions));
     }
@@ -75,7 +76,7 @@ public class SubmissionReportBuilder {
     public double getAverageScore() {
         // TODO: answer this reporting question from the submissions collection
         return submissions.stream()
-                //extract the score
+                //extract the score and transform every item inside this stream into a primitive Java double
                 .mapToDouble(StudentSubmission::score)
                 .average()
                 .orElse(0.0);
@@ -93,25 +94,23 @@ public class SubmissionReportBuilder {
         Map<String, Long> groupedMap = submissions.stream()
                 .collect(Collectors.groupingBy(
                         StudentSubmission::assignmentName, //key
-                        counting() // no semicolon shld be here - value - Counts items per bucket
-                        )
-                );
+                        Collectors.counting() // no semicolon shld be here - value - Counts items per bucket
+
+                ));
         // Makes the map completely unmodifiable before handing it out
         return java.util.Collections.unmodifiableMap(groupedMap);
+        // or return Collections.unmodifiableMap(groupedMap); + need import java.util.Collections; at top of file
     }
 
     /**
      * Return the submissions whose score is below 60.
      */
-    // Since the test suite explicitly checks that the list returned by this method cannot be modified from the outside
-    // (failingSubmissionsIsUnmodifiable). Using Collectors.toList() returns a standard mutable ArrayList.
-    // If someone calls .clear() on it, it won't throw an exception, causing your test to fail.
-    // You need to use Collectors.toUnmodifiableList() instead.
+
     public List<StudentSubmission> getFailingSubmissions() {
         // TODO: answer this reporting question from the submissions collection
         return submissions.stream()
                 .filter(studentSubmission -> studentSubmission.score()<60)
-                .collect(Collectors.toUnmodifiableList());
+                .toList(); // same as : .collect(Collectors.toUnmodifiableList()); do NOT do .collect(Collectors.toList()) bc its modifiable
     }
 
     /**
@@ -131,7 +130,7 @@ public class SubmissionReportBuilder {
 1- Collectors.groupingBy() --> 1-to-Many --> Automatically puts values into a collection bucket (List, Set, or a Count).
 --> Grouping multiple items together (e.g., Many submissions under one Homework assignment name).
 
-2- Collectors.toMap() --> 1-to-1 --> Links the key directly to a single, raw object property. --> Building direct lookup registries or ID indexes (e.g., Student Name $\rightarrow$ Score).
+2- Collectors.toMap() --> 1-to-1 --> Links the key directly to a single, raw object property. --> Building direct lookup registries or ID indexes (e.g., Student Name -> Score).
 We use toMap() when we are certain that every key in our data is unique (or we only want to pick one specific value per key).
 If Java finds duplicate keys while using toMap(), it will throw an IllegalStateException unless you explicitly tell
 it how to handle the tie.
@@ -149,7 +148,7 @@ public Map<String, Integer> getStudentScores() {
 
 What if there are duplicate keys? (The Tie-Breaker)
 If your list has two submissions for "Alice", toMap() will panic and crash because it doesn't know which score to keep.
- To fix this, you pass a third argument to toMap() called a merge function. This acts as a tie-breaker.
+To fix this, you pass a third argument to toMap() called a merge function. This acts as a tie-breaker.
 
 Keeping the Highest Score:
 public Map<String, Integer> getHighestScorePerStudent() {

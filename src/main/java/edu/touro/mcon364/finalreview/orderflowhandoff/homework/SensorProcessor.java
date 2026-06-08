@@ -11,29 +11,39 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Homework 2 — Sensor reading processor.
  *
- * A monitoring system receives readings from sensors over time. One part of the
- * program submits readings as they arrive. Another part of the program processes
- * those readings using one or more background workers.
- *
- * This class is responsible for coordinating that handoff and for keeping a
- * summary of the readings that were actually processed.
- *
- * The important question is not only "How do we calculate the stats?" It is also:
- * "What happens when readings are being submitted and processed by different
- * threads at the same time?" -- so we need volatile boolean flag
+ * * A monitoring system receives readings from sensors over time. One part of the
+ *  * program submits readings as they arrive. Another part of the program processes
+ *  * those readings using one or more background workers.
+ *  * --> multiple threads will be submitting and processing readings at the same time.
+ *  *     this is a thread-safety problem, and we need to coordinate the handoff of work between those threads.
+ *  * This class is responsible for coordinating that handoff and for keeping a
+ *  * summary of the readings that were actually processed.
+ *  * --> we need to store the submitted readings somewhere until they are processed,
+ *  *     and we need to keep track of the summary statistics for the processed readings.
+ *  * The important question is not only "How do we calculate the stats?" It is also:
+ *  * "What happens when readings are being submitted and processed by different
+ *  * threads at the same time?"
  *
  * Requirements:
- * - submit(reading) accepts one new sensor reading for later processing.
- * - start(workerCount) starts workerCount background workers.
- * - workerCount must be greater than 0.
- * - Workers should process submitted readings until the processor is stopped and
- *   all already-submitted readings have been handled.
- * - stop() tells the processor to stop accepting/processing future work and waits
- *   until the workers finish the remaining work.
- * - getTotalProcessed() returns how many readings have been processed so far.
- * - getStats() returns summary statistics for the processed reading values:
- *   count, minimum, maximum, sum, and average.
- * - Public reporting methods must not expose mutable internal state.
+ *  * - submit(reading) accepts one new sensor reading for later processing.
+ *  *   --> you should put the reading on a thread-safe queue or collection for later processing by the workers.
+ *  * - start(workerCount) starts workerCount background workers.
+ *  *   --> You should create a thread pool and submit workerCount tasks to it,
+ *  * - workerCount must be greater than 0.
+ *  *   --> You should validate the input and throw an exception if it's not.
+ *  * - Workers should process submitted readings until the processor is stopped and
+ *  *   all already-submitted readings have been handled.
+ *  *   --> Your worker runnable should check both the running state and the queue state to decide when to exit.
+ *  * - stop() tells the processor to stop accepting/processing future work and waits
+ *  *   until the workers finish the remaining work.
+ *  *   --> You should set a flag to stop accepting new work, interrupt the worker threads to wake them up if they're waiting,
+ *  *       and then wait for them to finish.
+ *  * - getTotalProcessed() returns how many readings have been processed so far.
+ *  *   --> You should use an AtomicInteger to keep track of the total count of processed readings, and return its value here.
+ *  * - getStats() returns summary statistics for the processed reading values:
+ *  *   count, minimum, maximum, sum, and average.
+ *  *   --> You should use a DoubleSummaryStatistics object to keep track of the summary statistics, and return a snapshot of it here.
+ *  * - Public reporting methods must not expose mutable internal state.
  *
  * Before coding, think about:
  * - Which object or objects represent work waiting to be processed?
@@ -65,20 +75,16 @@ public class SensorProcessor {
     private final AtomicReference<DoubleSummaryStatistics> stats = new AtomicReference<>(new DoubleSummaryStatistics());
     // use an atomic shell
     // we need the flag bc we are going only as the processor is running
-    // delcare isRunning as false- and then switch it to true when we call start()
+    // declare isRunning as false- and then switch it to true when we call start()
     private volatile boolean isRunning= false;
-    ExecutorService executor ;
+    private ExecutorService executor ;
 
     public void submit(SensorReading reading) {
         // TODO: decide where submitted readings should be stored
         // Producer- we are making the donuts and dropping them on a tray- the BlockingQueue
-
-        // when the shop is closed - we are closed - we are not letting anyone new in.
-        // we just finish the orders we are already filling
-        if (!isRunning) {
-            throw new IllegalStateException("Processor has been stopped and is no longer accepting work.");
+        if(isRunning) {
+            queue.offer(reading); // or  queue.add(reading);
         }
-        queue.add(reading);
     }
 
     /**
@@ -92,10 +98,6 @@ public class SensorProcessor {
         if (workerCount <= 0)
             throw new IllegalArgumentException("workerCount must be greater than 0");
 
-        // If the shop is already open - then we have all the workers in there... we dont need to add mroe in.
-        if (isRunning) {
-            throw new IllegalStateException("Processor is already running.");
-        }
 
         // TODO: start the requested number of workers
         isRunning = true;
@@ -107,17 +109,32 @@ public class SensorProcessor {
         }
     }
 
+    /*
+    Instead of locking up the whole thread using a heavy synchronized block, updateAndGet uses an optimistic, lock-free approach.
+    Here is what happens behind the scenes:
+    Snapshotting: The method looks at what is currently saved in the AtomicReference and hands it to your lambda expression as existing.
+    Immutability Emulation: Inside the lambda, you do not modify existing. Instead, you treat it as if it were read-only.
+    You build a brand new scratchpad (updated), copy the old history over (updated.combine(existing)), and add your new metric (updated.accept(...)).
+    The Race Condition Check (Compare-And-Swap): Java tries to replace the old object reference with your new updated reference.
+    If no other thread interfered: The swap is successful.
+    If another worker snuck in first: The swap fails. Java discards your updated object, grabs the newly modified baseline
+    from the other thread, and re-runs your lambda with the fresh data so no numbers are lost!
+     */
     private void process(SensorReading reading) {
-        // Update the total processed count
+        // 1. Increment total counter safely
         totalProcessed.incrementAndGet();
-        //updateAndGet takes a lambda and we are calculating thw new value of the summaryStats.
-        // we first make a new object and then we get current value - modify it- and then we combine in summaryStats
+
+        // 2. Perform a Compare-And-Swap (CAS) loop to update statistics atomically
         stats.updateAndGet(existing -> {
+            // A. Create a completely brand new, empty stats sheet
             DoubleSummaryStatistics updated = new DoubleSummaryStatistics();
-            // Combine the existing stats with the new reading
+
+            // B. Copy all existing historical stats into it
             updated.combine(existing);
-            // Update the stats with the new reading value
+
+            // C. Record the new sensor reading's value into it
             updated.accept(reading.value());
+
             return updated;
         });
     }
@@ -139,8 +156,7 @@ public class SensorProcessor {
         // and feed it into a shared data structure that tracks statistics.
 
         // keep running while system is active OR while there are leftover items to drain
-
-        while (isRunning || !queue.isEmpty()) { // while its empty or queue is empty
+        while (isRunning || !queue.isEmpty()) {
             try {
                 // Wait for a reading to become available, but time out periodically to check the running state
                 SensorReading reading = queue.poll(100, java.util.concurrent.TimeUnit.MILLISECONDS);
@@ -175,11 +191,12 @@ public class SensorProcessor {
             executor.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
         }
 
-        // now we need to drain the queue- we process the remaining messages on the main thread
-        // UPDATE HERE! ADD A PROCESS METHOD!
-        while(!queue.isEmpty()){
-            process(queue.poll());
-        }
+        // now we need to drain the queue - we process the remaining messages on the main thread
+        // in LogProcessor we validate nulls more...
+        SensorReading reading;
+        while((reading=queue.poll())!=null) // poll() retrieves and removes the head of the queue, but if the queue is empty, it returns null immediately.
+            process(reading);
+
     }
 
     /**

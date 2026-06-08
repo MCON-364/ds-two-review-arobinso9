@@ -54,6 +54,7 @@ public class StudentGradeBook {
      */
     public DoubleSummaryStatistics getStatistics() {
         // TODO
+        // grades is a Map of name:grade
         return grades.values().stream()
                 .mapToDouble(Double::doubleValue) // Unbox to primitive double stream
                 .summaryStatistics();
@@ -65,12 +66,13 @@ public class StudentGradeBook {
      */
     public TreeMap<String, Long> getLetterGradeDistribution() {
         // TODO
+        // grades is a Map of name:grade
         return grades.values().stream()
-                .map(this::toLetterGrade) // Convert numbers to "A", "B", "C"...
+                .map(this::toLetterGrade) // Convert number grades to "A", "B", "C"...(Strings)
                 .collect(Collectors.groupingBy(
-                        letterGrade -> letterGrade,
+                        letterGrade -> letterGrade, //key
                         TreeMap::new,            // Keeps letter grades sorted ("A" -> "B" -> "C"...)
-                        Collectors.counting()    // Counts occurrences per group
+                        Collectors.counting()    // Counts occurrences per group //value
                 ));
     }
 
@@ -79,6 +81,7 @@ public class StudentGradeBook {
      */
     public List<String> getTopStudents(int n) {
         // TODO
+        // grades is a Map of name:grade
         // see notes in word freq counter
         return grades.entrySet().stream() // we do entrySet bc we need access to both the key and the value
                 .sorted(Map.Entry.comparingByValue(Comparator.reverseOrder())) // Sort highest grade first
@@ -93,12 +96,21 @@ public class StudentGradeBook {
      */
     public List<String> getStudentsInScoreRange(double low, double high) {
         // TODO
+        // grades is a Map of name:grade
+        // we do entrySet bc we need access to both the key and the value
         return grades.entrySet().stream()
                 .filter(entry -> entry.getValue() >= low && entry.getValue() <= high)
                 // Ensure alphabetical sorting by name since source map might be an unordered HashMap
                 .map(Map.Entry::getKey)
                 .sorted()
                 .toList();
+        /*
+        OR: take advantage of the buildSortedGradeBook() method! This is better approach
+        return buildSortedGradeBook().entrySet().stream()
+                .filter(entry -> entry.getValue() >= low && entry.getValue() <= high)
+                .map(Map.Entry::getKey)
+                .toList();
+         */
     }
 
     // Helper method to translate numerical scores to letter grades

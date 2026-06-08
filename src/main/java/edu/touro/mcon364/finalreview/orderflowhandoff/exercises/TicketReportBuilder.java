@@ -99,9 +99,33 @@ public class TicketReportBuilder {
         // TODO: calculate from tickets- I could hv used summaryStats instead
         return tickets.stream()
                 .filter(ticket -> ticket.resolved()==true)
+                // .mapToInt(...): This tells the stream, "I want to transform every item inside this stream into a primitive Java int."
+                // It converts your stream of complex objects (Stream<SupportTicket>) into a specialized stream of primitive integers (IntStream).
+                // In Java, standard streams handle generic objects (like Stream<SupportTicket>).
+                // If you try to calculate an average directly on an object stream, Java doesn't know how—because you can't mathematically add or divide custom objects together.
+                // By using mapToInt, you switch to a highly optimized IntStream that unlocks built-in statistical functions like:
+                //.average(), .sum(), .max(), .min()
+                // SupportTicket::minutesToResolve: This is a method reference. It is a cleaner, shorthand way of writing the lambda expression: ticket -> ticket.minutesToResolve().
+                // So in one single step, Java does two things at the exact same time:
+                // Extraction (Pulling): It reaches inside the SupportTicket object and grabs the value of minutesToResolve.
+                // Conversion (Casting): It unwraps that value from the object structure and drops it directly into a primitive IntStream.
+                // If you want to extract the minutes without converting them into primitive values, you use the standard .map() method instead of .mapToInt()
                 .mapToInt(SupportTicket::minutesToResolve)
                 .average()
                 .orElse(0);
+        /* Or using Summary Statistics:
+        return tickets.stream()
+            .filter(SupportTicket::resolved)
+            .mapToInt(SupportTicket::minutesToResolve)
+            .summaryStatistics() // ◄ Gathers all math stats at once
+            .getAverage();       // ◄ Extracts just the average
+        Metric Available	How to grab it from your code	Value if stream is empty
+        Average	                .getAverage()	             0.0
+        Count	                .getCount()	                 0
+        Sum	                    .getSum()	                 0
+        Maximum	                .getMax()	                 Integer.MIN_VALUE
+        Minimum	                .getMin()	                 Integer.MAX_VALUE
+         */
     }
 
     /**
@@ -124,8 +148,7 @@ public class TicketReportBuilder {
     public List<SupportTicket> getHighPriorityUnresolved() {
         // TODO: calculate from tickets
         return tickets.stream()
-                .filter(ticket -> ticket.resolved()== false)
-                .filter(ticket -> ticket.priority() == Priority.HIGH)
+                .filter(ticket -> ticket.resolved()== false && ticket.priority() == Priority.HIGH)
                 .toList();
     }
 

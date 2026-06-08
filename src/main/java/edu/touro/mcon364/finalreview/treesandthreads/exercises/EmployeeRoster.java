@@ -45,7 +45,7 @@ public class EmployeeRoster {
 
     public EmployeeRoster(List<Employee> employees) {
         // TODO: validate non-null, store a defensive copy
-        if  (employees == null)
+        if (employees == null)
             throw new IllegalArgumentException("employees cannot be null");
         this.employees = List.copyOf(employees);
     }
@@ -59,14 +59,14 @@ public class EmployeeRoster {
     TreeMap is a Map: It stores Key-Value pairs (Map<K, V>).
     You look up a value (like a definition) using its unique key (like a word).
     TreeSet is a Set: It stores Individual unique elements (Set<E>).
-     It is simply a collection of distinct items with no associated values.
+    It is simply a collection of distinct items with no associated values.
      */
     public TreeMap<String, TreeSet<Employee>> buildRoster() {
         // TODO
         return employees.stream().collect(Collectors.groupingBy(
                 employee -> employee.department(), //dept is the key
                 TreeMap::new, // we want it in a sorted TreeMap instead of default HashSet
-                Collectors.toCollection(TreeSet::new) // the value is a TreeSet- a sorted set of employees
+                Collectors.toCollection(TreeSet::new) // the value is a TreeSet- a sorted set of employees- value: treeset of Employees
         ));
     }
 
@@ -77,14 +77,15 @@ public class EmployeeRoster {
      */
     public Map<String, Employee> getTopEarnerPerDepartment() {
         // TODO
-        // we get the key/value pairs of dept: treeMap of employees and stream them
+        // we get the key/value pairs of (dept: treeMap of employees) and stream them
         return buildRoster().entrySet().stream()
-                // We build a brand new map from this stream.- this is 1:1. we use toMap()
+                // We build a brand-new map from this stream.- this is 1:1. we use toMap()
                 .collect(Collectors.toMap(
                         Map.Entry::getKey,//key - the dept - Keeps the department name as the key in the new map.
                         // For each department, we extract the TreeSet value, turn that internal set into a stream of employees
                         entry -> entry.getValue().stream()
                                 // we then use .max(Comparator.comparingDouble(Employee::salary)) to evaluate their salaries and find the highest-paid individual.
+                                // extract their salaries and get max per dept
                                 .max(Comparator.comparingDouble(Employee::salary))
                                 // we use .orElseThrow() as a tool to tell the compiler: "Open this Optional box and give me the raw Employee inside.
                                 // I promise you it isn't empty, but if it is, crash the program." Because of the rules of groupingBy in Step 1, it will never be empty, making it 100% safe!
@@ -102,9 +103,9 @@ public class EmployeeRoster {
      */
     public List<Employee> getAllEmployeesSorted() {
         // TODO
-        // we get the values: treeMap of employees and stream them
+        // we get the values: treeSets of employees and stream all the treeSets
         return buildRoster().values().stream()
-                //unbox the TreeSets
+                //unbox the TreeSets, so we are working with Employee objects now
                 .flatMap(Collection::stream)
                 // just bc they were sorted by dept - does not at all mean that when we flatMap the employees they will be sorted when combined
                 // there4 we need to sort all employees.
@@ -129,6 +130,7 @@ public class EmployeeRoster {
         }
         // .subMap(from, true, to, true):  we pass boolean flags here.
         // Setting both to true ensures that both the from word and the to word are inclusive in our slice.
+        // default is: from= inclusive. to= exclusive
         return buildRoster().subMap(from, true, to, true);
     }
 }

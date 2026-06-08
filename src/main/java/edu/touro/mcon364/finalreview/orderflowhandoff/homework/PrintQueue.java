@@ -10,7 +10,7 @@ import java.util.concurrent.Semaphore;
  * Homework 1 — PrintQueue.
  *
  * A small print room has one shared printer. Many print jobs can be submitted,
- * but the printer can only work on one job at a time.--use a semaphore
+ * but the printer can only work on one job at a time.
  *
  * The print room should behave the way people expect a normal printer line to
  * behave: jobs wait until it is their turn, and the next job selected for
@@ -59,7 +59,7 @@ public class PrintQueue {
      *
      * @return the next print job, or Optional.empty() when no jobs are waiting
      */
-    //In an ArrayDeque, pop() acts like a stack LIFO, so use poll() and removeFirst() instead for FIFO
+    // In an ArrayDeque, pop() acts like a stack LIFO, so use poll() or removeFirst() instead for FIFO
     // calling Optional.of() on a variable that could potentially be null is unsafe.
     // Java will crash with a NullPointerException instead of returning Optional.empty().
     // To be safe, you should use Optional.ofNullable()

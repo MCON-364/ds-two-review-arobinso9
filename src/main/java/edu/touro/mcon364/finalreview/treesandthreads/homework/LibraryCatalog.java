@@ -62,6 +62,7 @@ public class LibraryCatalog {
     /**
      * Returns a TreeMap grouping books by author; each author maps to a
      * TreeSet of their books sorted by title.
+     * 1:M
      */
     public TreeMap<String, TreeSet<Book>> buildAuthorIndex() {
         // TODO
@@ -69,13 +70,14 @@ public class LibraryCatalog {
                 .collect(Collectors.groupingBy(
                         Book::author, // author is the key
                         TreeMap::new, // groupingBy by default creates a HashMap, so here we are creating a TreeMap instead
-                        Collectors.toCollection(TreeSet::new) // the value is a TreeSet- a sorted set of books by title- see the Book classes compareTo method
+                        Collectors.toCollection(TreeSet::new) // the value is a TreeSet- a sorted set of books by title - see the Book classes compareTo method
+                        // 1) if we didn't want TreeSet, then wld do Collectors.toList() instead of Collectors.toCollection(TreeSet::new).
                 ));
     }
 
     /**
      * Returns all books published strictly before the given year, sorted by title.
-     *
+     * buildTitleIndex() -> each title points to exactly one Book obj
      */
     public List<Book> getBooksPublishedBefore(int year) {
         // TODO
@@ -87,7 +89,8 @@ public class LibraryCatalog {
 
     /**
      * Returns a sorted list of author names who have more than n books in this catalog.
-     *
+     * buildAuthorIndex() -> each author points to a TreeSet of Book objects
+     * since we need access to both the key and value we use .entrySet()
      */
     public List<String> getAuthorsWithMoreThan(int n) {
         // TODO
@@ -165,3 +168,51 @@ public class LibraryCatalog {
     }
 }
 
+/*
+Implementation 1: Finding Authors Starting with a Letter
+If you want to find all authors whose names start with a certain character,
+you grab the keySet() of your author index (which is a sorted set of strings) and slice it using subSet:
+
+public List<String> getAuthorsStartingWith(char prefix) {
+    String start = String.valueOf(prefix);
+    String end   = String.valueOf((char) (prefix + 1));
+
+    // Route A: Slice the TreeMap first, then extract the standard keySet
+    return new ArrayList<>(buildAuthorIndex().subMap(start, end).keySet());
+}
+
+Implementation 2: Finding a Specific Author's Books Starting with a Letter
+What if you have an author's TreeSet<Book> from buildAuthorIndex().get(authorName),
+and you want to pull only their books that start with a specific letter?
+Because a TreeSet sorts things based on its Comparator (which in your Book class sorts by title),
+you cannot just pass raw strings into subSet. You must pass dummy Book objects containing the boundary titles to match how the tree calculates positions!
+
+public List<Book> getBooksByAuthorStartingWith(String authorName, char prefix) {
+    TreeSet<Book> authorBooks = buildAuthorIndex().get(authorName);
+    if (authorBooks == null) return List.of();
+
+    // Create a dummy start book (e.g., Title: "b", Year/Author don't matter for sorting)
+    Book startBook = new Book(String.valueOf(prefix), authorName, 0);
+
+    // Create a dummy end book (e.g., Title: "c")
+    Book endBook   = new Book(String.valueOf((char) (prefix + 1)), authorName, 0);
+
+    // subSet works on the TreeSet of books using the dummy boundaries!
+    return new ArrayList<>(authorBooks.subSet(startBook, endBook));
+}
+ */
+
+/*
+Imagine the requirements change, or a new method is added called getSortedBooksByAuthor(String author).
+Because your index now stores books in a regular ArrayList (the order they happened to arrive in), you can no longer just pull the collection and return it. You are forced to introduce an explicit .sorted() step into a stream pipeline to sort them by title manually:
+
+public List<Book> getSortedBooksByAuthor(String author) {
+    List<Book> unsortedBooks = buildAuthorIndex().get(author);
+    if (unsortedBooks == null) return List.of();
+
+    // We must manually sort now because the List didn't do it for us!
+    return unsortedBooks.stream()
+            .sorted(Comparator.comparing(Book::title))
+            .toList();
+}
+ */

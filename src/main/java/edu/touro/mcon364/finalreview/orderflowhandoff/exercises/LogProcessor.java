@@ -44,7 +44,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * - The class must behave correctly when multiple threads interact with it.
  *
  * Questions to think about before coding:
- * - Where should submitted messages wait before a worker processes them?
+ * - Where should the submitted messages wait before a worker processes them?
  * - What behavior do we need from that structure: newest first, oldest first,
  *   priority order, or something else?
  * - Which state is shared by multiple threads?
@@ -73,9 +73,8 @@ public class LogProcessor {
      */
 
     private final BlockingQueue<LogMessage> queue = new LinkedBlockingQueue<>(); // this can grow- and if messages are being
-    // submitting on the queue but nothing is being removed from the queue - then it will fill up- so we make a safeguard-
+    // submitted on the queue but nothing is being removed from the queue - then it will fill up- so we make a safeguard-
     // offer() will only add if there is space on the queue.
-    private final List<Thread> workers = new ArrayList<>();
     private ExecutorService executorService;
     private final AtomicInteger totalProcessed= new  AtomicInteger(0);
     // we use compute() and merge() when working with ConcurrentHashMaps
@@ -103,6 +102,9 @@ public class LogProcessor {
         if(workerCount<=0){
             throw new  IllegalArgumentException("workerCount must be greater than 0");
         }
+        // set running to true bc
+        // 1) Accepts work: It unlocks the submit() method so incoming log messages can actually enter the queue.
+        // 2) Keeps workers alive: It tells your background worker threads to stay awake and keep waiting for logs to process.
         running=true;
 
         // creates a new pool and each thread will take a message from the queue
@@ -139,7 +141,7 @@ public class LogProcessor {
         // TODO: implement
         try{
             while(running || !queue.isEmpty()){
-                process(queue.take());
+                process(queue.take()); // take() retrieves and removes the head of the queue, but if the queue is empty, it completely freezes execution on that thread and waits until an item becomes available.
             }
         }catch(InterruptedException e){
             Thread.currentThread().interrupt();
@@ -156,6 +158,27 @@ public class LogProcessor {
         // merge is Atomic op on concurrent hashmap. It takes 3 params- key, value to apply to the method, and a method.
         // So here - we will take the current value, and then every time we get another value, we will add one.
         countsByLevel.merge(message.level(), 1, Integer::sum);
+
+        /*
+        Using compute() to update counts atomically
+        If the log level hasn't been seen yet, currentCount will be null.
+        We initialize it to 1, otherwise we increment the existing count.
+        Is key (LogLevel) present? If yes -> currentCount = X. If no -> currentCount = null
+        Then we Execute lambda: (key, val) ->  Returns: X + 1  OR  Returns: 1
+
+        countsByLevel.compute(message.level(), (key, currentCount) -> {
+        return (currentCount == null) ? 1 : currentCount + 1;
+    });
+
+        merge()	-> Provide a default value + an aggregation function. ->	Only executes if a value already exists.
+        params: 1) key:	LogLevel -> The key you want to look up or insert.
+                2) value: Integer(1) -> The default value to use if the key does not exist yet.
+                3) remappingFunction: BiFunction (Integer::sum) ->	The formula to combine the old value and the new value if the key does exist. It receives (oldValue, newValue).
+
+        compute() ->	Compute a new value based entirely on the key and the current value. ->	Always executes and must manually check for null.
+        params: 1) key: LogLevel -> The key you want to look up or insert.
+                2) remappingFunction: BiFunction -> A formula that calculates the final value. It runs regardless of whether the key exists or not. It receives (key, currentValue).
+         */
     }
 
     /**
@@ -163,7 +186,13 @@ public class LogProcessor {
      */
     public void stop() throws InterruptedException {
         // TODO: implement
+        // set running to false bc:
+        // 1) Locks the door: It forces submit() to reject any new logs, ensuring no new work piles up while you are trying to clean up.
+        // 2) Initiates closing shift: It signals the worker threads that no new work is coming.
+        // They know they just need to finish whatever is currently left in the queue, and then they can safely shut down.
         running=false;
+
+        // handles the edge case where someone accidentally calls stop() before ever calling start() so no NPE will b thrown by shutdown
         if(executorService==null)
             return;
 
@@ -172,9 +201,9 @@ public class LogProcessor {
 
         // drain any messages that were in the queue but not yet picked up
         // we call messages in the queue and process them on the main thread - since we already shut down the worker threads above
-        // this is how we make sure we processed all the remaining message son the queue - so now we did :)
+        // this is how we make sure we processed all the remaining messages on the queue - so now we did :)
         LogMessage msg;
-        while((msg=queue.poll())!=null)
+        while((msg=queue.poll())!=null) // poll() retrieves and removes the head of the queue, but if the queue is empty, it returns null immediately.
             process(msg);
     }
 

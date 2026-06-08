@@ -84,10 +84,11 @@ public class ConcurrentEventLog {
         ExecutorService executor = Executors.newFixedThreadPool(sources.size());
         //loop thru each list of source names one at a time
         for (String source : sources) {
+            // we loop thru each source, eventsEach amount of times
             //for each event, do the following:
             for (int i = 1; i <= eventsEach; i++) {
                 //the work each thread needs to do:
-                final int eventId = i; // Fixes the "effectively final" lambda restriction
+                final int eventId = i; // Fixes the "effectively final" lambda restriction- we can't hv vars we are changing inside a lambda
                 executor.submit(() -> {
                     long timeStamp = System.currentTimeMillis();
                     String msg= source+ "-"+ eventId;
@@ -117,18 +118,19 @@ public class ConcurrentEventLog {
         // (assuming 1 million events didn't hit at the exact same millisecond).
         // By jumping straight to 778,000,000, we are telling the map: "Skip everything that belongs to millisecond 777
         // entirely, and start reading the tree from the absolute first possible instant of millisecond 778 onwards."
-        long startKey = (timestamp * 1_000_000L) + 1_000_000L;
+        long startKey = (timestamp * 1_000_000L) + 1_000_000L;  // same as this -long startKey = (timestamp + 1) * 1_000_000L;- Move time forward by 1ms, then shift it into a composite key
 
         // When you call log.tailMap(778000000L, true), the map uses its internal skip-list index to teleport
         // directly to that boundary line. It completely ignores everything above the line and streams only the values below it.
-        return log.tailMap(startKey, true)
-                .values()
+        return log.tailMap(startKey) // default to starting bound inclsuove
+                .values() // we are returning the messages
                 .stream()
                 .toList();
     }
 
     /**
      * Returns all events in the timestamp range [from, to] inclusive, in order.
+     * If we pass in 774,778 -> we will get everything from 774,000,000 to 778,999,999.
      */
     public List<String> getEventsBetween(long from, long to) {
         // TODO
@@ -145,7 +147,7 @@ public class ConcurrentEventLog {
         // Setting both to true ensures that both the from timestamp and the to timestamp are inclusive in our slice. so 1-3.999999
 
         return log.subMap(startKey, true, endKey, true)
-                .values()
+                .values()// we are returning the messages
                 .stream()
                 .toList();
     }
@@ -155,7 +157,7 @@ public class ConcurrentEventLog {
      */
     public List<String> getMostRecentN(int n) {
         // TODO
-        // descendingMap() turns the map upside down so newest keys appear first
+        // descendingMap() turns the map upside down so newest keys appear first - meaning the most recent ones come first
         return log.descendingMap()
                 .values()
                 .stream()
@@ -169,3 +171,26 @@ public class ConcurrentEventLog {
     }
 }
 
+/*
+
+The Solution: The "Composite Key" Trick
+To keep everything sorted and unique, we take a single long number and split it into two visual zones:
+The Left Side (High Digits): Holds the actual timestamp.
+The Right Side (Low Digits): Holds a simple counter (0 to 999,999) that increments if multiple events hit at the exact same millisecond.
+
+Why we Multiply by 1,000,000
+Multiplying a number by 1,000,000 simply shifts it over to the left, opening up 6 empty zeros on the right side to act as a placeholder for our counter.
+Let's look at what happens when three events hit at millisecond 777:
+Event 1: (777 * 1,000,000) + 0 = 777,000,000
+Event 2: (777 * 1,000,000) + 1 = 777,000,001
+Event 3: (777 * 1,000,000) + 2 = 777,000,002
+Because of the multiplication, the keys stay unique, and they are mathematically sorted exactly in the order they occurred!
+
+Why the "Get Events After" Math Works
+Now, suppose the requirement says: "Give me all events logged strictly AFTER millisecond 777.
+"This means we want to completely skip millisecond 777 and grab everything starting at millisecond 778.
+What is the absolute highest key that could ever exist for millisecond 777? It's 777,999,999 (if the counter maxed out).
+To find the boundary line where millisecond 778 begins, we run this math:(777 + 1) * 1,000,000 = 778,000,000
+When we pass 778,000,000 into log.tailMap(startKey), your tree structure instantly leaps over every single key starting
+with 777 and starts reading the data from the very first entry of 778 all the way to the end of time.
+ */

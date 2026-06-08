@@ -38,7 +38,7 @@ public class ActionHistory {
     public void perform(Action action) {
         // TODO: implement based on the requirements above
         undo.push(action); // when we do something then we want to be able to undo it later
-       // when we perfrom an action we clear the redo satck
+       // when we perform an action we clear the redo stack
         redo.clear();
     }
 
@@ -54,7 +54,7 @@ public class ActionHistory {
         Action action = undo.pop();
         redo.push(action); // Move it to redo so the user can bring it back
 
-        return Optional.of(action);
+        return Optional.ofNullable(action);
     }
 
     public Optional<Action> redo() {
@@ -68,7 +68,7 @@ public class ActionHistory {
         Action action = redo.pop();
         undo.push(action); // Move it back to undo so the user can undo it again
 
-        return Optional.of(action);
+        return Optional.ofNullable(action);
     }
 
     public int getUndoCount() {

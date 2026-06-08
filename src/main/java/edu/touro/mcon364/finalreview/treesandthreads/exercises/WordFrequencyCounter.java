@@ -57,7 +57,7 @@ public class WordFrequencyCounter {
      * @return sorted frequency map
      */
     // Collectors.toCollection() is used for gathering elements into a Collection (like a TreeSet).
-    // To build a Map, you need Collectors.groupingBy()
+    // To build a Map, you need Collectors.groupingBy() for 1:M or Collectors.toMap() for 1:1
     // Instead, we use Collectors.groupingBy(Function.identity(), TreeMap::new, Collectors.counting()).
     // This groups by the word, ensures the factory produces a TreeMap, and counts occurrences.
     public TreeMap<String, Long> buildFrequencyMap() {
@@ -78,11 +78,14 @@ public class WordFrequencyCounter {
      */
     public List<String> getTopN(int n) {
         // TODO
-        //// We pull the sorted frequency map we just built, grab its entry set (key-value pairs), and stream it.
-        // We must stream the entries because we need to sort by the values (the counts), not the keys.
+        // We pull the sorted frequency map we just built, grab its entry set (key-value pairs), and stream it.
+        // so we are working w a sorted TreeMap of pairs of: (word: # of appearances)
+        // We must stream the entries -entrySet() bc we need access to both the key and the value
+        // Now we need to sort by the values (the counts), not the keys- words
         return buildFrequencyMap().entrySet().stream()
                 // Map.Entry.comparingByValue() tells the stream to sort the pairs by their counts.
                 // Comparator.reverseOrder() flips it so that the largest counts come first. (bc normally its in ascending order. we need descending)
+                // so we sort by comparing the values in descending order.
                 .sorted(Map.Entry.comparingByValue(Comparator.reverseOrder()))
                 //  limit(n) Truncates the stream so that only the first n elements (the highest counts) remain.
                 .limit(n)
@@ -149,13 +152,23 @@ public class WordFrequencyCounter {
         // Setting both to true ensures that both the from word and the to word are inclusive in our slice.
         return freqMap.subMap(from, true, to, true)
                 // Converts the isolated range slice into a stream of entry pairs.
-                .entrySet()
+                .entrySet() // we must specify the set when we are working with TreeMaps!
                 .stream()
-                // The terminal .max() operation scans the stream and finds the entry with the highest numeric value (the frequency).
+                // The terminal .max() operation scans the stream and finds the entry with the highest numeric value (the frequency). bc we did comparingByValue
                 // Because it evaluates the stream, it returns an Optional<Map.Entry<String, Long>> (handling cases where the range might be empty).
                 .max(Map.Entry.comparingByValue())
                 // Transforms the Optional containing the entry pair into an Optional<String> containing just the winning word.
                 // If the max element didn't exist, the Optional naturally stays empty.
                 .map(Map.Entry::getKey);
     }
+    /*
+    Exactly How Optional.map() Handles the Data
+    Think of the Optional returned by .max() as a secure cardboard box.
+    If the box has something inside: Optional.map(Map.Entry::getKey) opens the box, takes out the winning Map.Entry pair
+    (e.g., ["banana" = 12]), strips away the frequency count 12, takes just the key string "banana", puts "banana" back
+    into a new box, and hands it to you as an Optional<String>.
+    If the box is completely empty: (which happens if your alphabetical range had zero matching words),
+    Optional.map() completely skips the conversion step. It doesn't break, it doesn't crash with a NullPointerException—
+    it simply hands you back a clean, safe Optional.empty().
+     */
 }

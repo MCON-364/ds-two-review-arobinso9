@@ -39,6 +39,7 @@ import java.util.stream.*;
 public class ConcurrentLeaderboard {
 
     // ScoreEntry.compareTo sorts highest score first
+    // ConcurrentSkipListSet is the thread-safe sorted cousin of TreeSet. TreeSet is NOT thread safe!
     private final ConcurrentSkipListSet<ScoreEntry> leaderboard = new ConcurrentSkipListSet<>();
     private final AtomicInteger totalSubmissions = new AtomicInteger(0);
 
@@ -81,7 +82,7 @@ public class ConcurrentLeaderboard {
     /**
      * Simulates concurrent score submissions using an ExecutorService.
      *
-     * Each player in the list submits scoresEach random scores on a separate thread.
+     * Each player in the list submits scoresEach amount of random scores on a separate thread.
      * Wait for all threads to finish before returning.
      *
      * @param players    list of player names
@@ -104,13 +105,13 @@ public class ConcurrentLeaderboard {
 
 
         // we need a nested loop (expressed via streams) to submit multiple scores per player
-        players.forEach(player -> {
+        for (String player : players) {     // we loop thru the players and grab each player = their name - which we use to create a ScoreEntry later
             // if a player sent in 5 scores then we need to submit 5 diff scores for them...
             for(int i=0; i<scoresEach; i++){
                 // When you call executor.submit(), you are dropping a piece of paper into their mailbox.
                 // The paper contains a Runnable task—a description of work that needs to be done.
                 // We are submitting a lambda expression () -> { ... }.
-                //To the executor, this lambda is just a package of code that says: "Hey worker thread, whenever
+                // To the executor, this lambda is just a package of code that says: "Hey worker thread, whenever
                 // you are free, open this package, generate a random score, and call submitScore for me."
                 executor.submit(() -> {
                     // Range: 1 (Inclusive)- to 100,000 (Exclusive)
@@ -125,7 +126,7 @@ public class ConcurrentLeaderboard {
                     submitScore(entry);
                 });
             }
-        });
+        }
 
         executor.shutdown();
         // Wait up to 10 seconds for all existing submitted tasks to finish running
